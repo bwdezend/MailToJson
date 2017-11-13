@@ -1,11 +1,23 @@
 #!/usr/bin/env python
 
-## Open Sourced by - Newsman App www.newsmanapp.com
-## (c) 2013 Newsman App
-## https://github.com/Newsman/MailToJson
+# Open Sourced by - Newsman App www.newsmanapp.com
+# (c) 2013 Newsman App
+# https://github.com/Newsman/MailToJson
 
-import sys, urllib2, email, re, csv, StringIO, base64, json, datetime, pprint
+import base64
+import csv
+import datetime
+import email
+import json
+import logging
+import pprint
+import re
+import StringIO
+import sys
+import urllib2
+
 from optparse import OptionParser
+from lockfile import FileLock
 
 VERSION = "1.3.1"
 
@@ -27,11 +39,12 @@ filename_re = re.compile("filename=\"(.+)\"|filename=([^;\n\r\"\']+)", re.I|re.S
 begin_tab_re = re.compile("^\t{1,}", re.M)
 begin_space_re = re.compile("^\s{1,}", re.M)
 
+
 class MailJson:
-    def __init__(self, content = None):
+    def __init__(self, content=None):
         self.data = {}
         self.raw_parts = []
-        self.encoding = "utf-8" # output encoding
+        self.encoding = "utf-8"  # output encoding
         self.setContent(content)
 
     def setEncoding(self, encoding):
@@ -85,7 +98,7 @@ class MailJson:
 
     def _decode_headers(self, v):
         if type(v) is not list:
-            v = [ v ]
+            v = [v]
 
         ret = []
         for h in v:
@@ -101,9 +114,7 @@ class MailJson:
 
                 hv = unicode(hv, h_encoding).strip().strip("\t")
 
-
                 h_ret.append(hv.encode(self.encoding))
-
             ret.append(" ".join(h_ret))
 
         return ret
@@ -140,7 +151,7 @@ class MailJson:
             # If all else has failed
             if entry and e is None:
                 e_split = entry.split(" ")
-                e = e_split[-1].replace("<", "").replace(">","")
+                e = e_split[-1].replace("<", "").replace(">", "")
                 entry = " ".join(e_split[:-1])
 
             ret.append({"name": entry, "email": e})
@@ -160,7 +171,7 @@ class MailJson:
         date = datetime.datetime.fromtimestamp(timestamp)
         return date
 
-    def _get_content_charset(self, part, failobj = None):
+    def _get_content_charset(self, part, failobj=None):
         """Return the charset parameter of the Content-Type header.
 
         The returned string is always coerced to lower case.  If there is no
@@ -233,11 +244,11 @@ class MailJson:
                 else:
                     filename = "undefined"
 
-                a = { "filename": filename, "content": base64.b64encode(part.get_payload(decode = True)), "content_type": part.get_content_type() }
+                a = {"filename": filename, "content": base64.b64encode(part.get_payload(decode=True)), "content_type": part.get_content_type()}
                 attachments.append(a)
             else:
                 try:
-                    p = { "content_type": part.get_content_type(), "content": unicode(part.get_payload(decode = 1), self._get_content_charset(part, "utf-8"), "ignore").encode(self.encoding), "headers": self._get_part_headers(part) }
+                    p = {"content_type": part.get_content_type(), "content": unicode(part.get_payload(decode=1), self._get_content_charset(part, "utf-8"), "ignore").encode(self.encoding), "headers": self._get_part_headers(part)}
                     parts.append(p)
                     self.raw_parts.append(part)
                 except LookupError:
@@ -256,16 +267,17 @@ class MailJson:
     def get_raw_parts(self):
         return self.raw_parts
 
+
 if __name__ == "__main__":
     usage = "usage: %prog [options]"
     parser = OptionParser(usage)
-    parser.add_option("-u", "--url", dest = "url", action = "store", help = "the url where to post the mail data as json")
-    parser.add_option("-p", "--print", dest = "do_print", action = "store_true", help = "no json posting, just print the data")
-    parser.add_option("-d", "--dump", dest = "do_dump", action = "store_true", help = "if present print to output the url post response")
+    parser.add_option("-u", "--url", dest="url", action="store", help="the url where to post the mail data as json")
+    parser.add_option("-p", "--print", dest="do_print", action="store_true", help="no json posting, just print the data")
+    parser.add_option("-d", "--dump", dest="do_dump", action="store_true", help="if present print to output the url post response")
+    parser.add_option("-l", "--log", dest="logfile", action="store", help="the file where to log the mail data as jsonlines")
 
     opt, args = parser.parse_args()
-
-    if not opt.url and not opt.do_print:
+    if not opt.url and not opt.do_print and not opt.logfile:
         print parser.format_help()
         sys.exit(1)
 
@@ -278,15 +290,22 @@ if __name__ == "__main__":
 
         if opt.do_print:
             print(json.dumps(data, encoding = data.get("encoding")))
-        else:
+        elif opt.url:
             headers = { "Content-Type": "application/json; charset=%s" % data.get("encoding"), "User-Agent": "NewsmanApp/MailToJson %s - https://github.com/Newsman/MailToJson" % VERSION }
             req = urllib2.Request(opt.url, json.dumps(data, encoding = data.get("encoding")), headers)
             resp = urllib2.urlopen(req)
             ret = resp.read()
-
             print "Parsed Mail Data sent to: %s\n" % opt.url
             if opt.do_dump:
                 print ret
+        elif opt.logfile:
+            lock_file = "/var/lock/maillog"
+            lock = FileLock(lock_file)
+
+            with lock:
+                with open(opt.logfile, 'a+') as f:
+                    f.write(json.dumps(data, encoding=data.get("encoding")) + "\n")
+
     except Exception, inst:
         print "ERR: %s" % inst
         sys.exit(ERROR_TEMP_FAIL)
